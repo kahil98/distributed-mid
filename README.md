@@ -27,13 +27,13 @@ docker compose ps
 | --- | --- | --- |
 | Prometheus | http://localhost:9090 | None |
 | Grafana | http://localhost:3000 | admin / GRAFANA_PASSWORD in .env |
-| Kafka | localhost:9092 | None |
+| Kafka | 127.0.0.1:9092 | None |
 | RabbitMQ AMQP | localhost:5672 | dev / RABBITMQ_PASSWORD in .env |
 | RabbitMQ management | http://localhost:15672 | Same as AMQP |
 
 Grafana has Prometheus configured as its default data source. Prometheus initially
 scrapes its own metrics. Kafka clients in Compose use `kafka:29092`; host clients
-use `localhost:9092`. This is a single-node local development stack.
+use `127.0.0.1:9092`. This is a single-node local development stack.
 
 `docker compose down` stops the services and preserves data in named volumes.
 
@@ -60,3 +60,4 @@ git push -u origin main
 ```
 
 `.env` and `.venv` are excluded from version control.
+
