@@ -1,0 +1,8 @@
+certifi==2026.10.23
+charset-normalizer==3.5.2
+idna==3.20
+kafka-python==2.3.3
+pika==1.4.4
+prometheus_client==0.26.0
+requests==2.34.2
+urllib3==2.8.0
