@@ -1,0 +1,19 @@
+# Local fallback when Docker's build cache or package downloads are unavailable.
+# Reuse only already-installed Python dependencies from the existing runtime.
+ARG CACHED_RUNTIME=distributed-mid-storage-node-1:latest
+FROM ${CACHED_RUNTIME} AS cached
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=cached /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY build-wheels /tmp/build-wheels
+RUN python -m pip install --no-index --find-links=/tmp/build-wheels 'psycopg[binary]==3.2.9' && python -m pip check && rm -rf /tmp/build-wheels && useradd --uid 10001 --create-home storage && mkdir /data && chown storage:storage /data
+COPY storage_node ./storage_node
+COPY metadata_service ./metadata_service
+COPY gateway_service ./gateway_service
+COPY scripts ./scripts
+COPY metadata_stub.py .
+USER storage
+ENV DATA_DIR=/data PYTHONUNBUFFERED=1
+EXPOSE 8000
+ENTRYPOINT ["python", "-m"]
+CMD ["uvicorn", "storage_node.app:app", "--host", "0.0.0.0", "--port", "8000"]

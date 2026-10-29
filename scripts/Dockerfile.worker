@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements-node.txt .
+RUN pip install --no-cache-dir -r requirements-node.txt
+COPY scripts ./scripts
+COPY metadata_service ./metadata_service
+CMD ["python","scripts/job_worker.py"]

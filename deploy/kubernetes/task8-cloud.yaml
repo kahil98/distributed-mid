@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: distributed-mid
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: storage-node
+  namespace: distributed-mid
+spec:
+  serviceName: storage-nodes
+  replicas: 4
+  selector:
+    matchLabels: { app: storage-node }
+  template:
+    metadata:
+      labels: { app: storage-node }
+    spec:
+      securityContext: { fsGroup: 10001 }
+      containers:
+        - name: storage-node
+          image: YOUR_REGISTRY/distributed-storage:VERSION
+          ports: [{ containerPort: 8000 }]
+          env:
+            - { name: NODE_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: DATA_DIR, value: /data }
+            - { name: METADATA_URL, value: "http://metadata:8000" }
+            - { name: ADVERTISED_URL, value: "http://$(NODE_ID).storage-nodes:8000" }
+          volumeMounts: [{ name: chunks, mountPath: /data }]
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata: { name: chunks }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: { storage: 20Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-nodes
+  namespace: distributed-mid
+spec:
+  clusterIP: None
+  selector: { app: storage-node }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: distributed-mid
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: YOUR_REGISTRY/distributed-gateway:VERSION
+          ports: [{ containerPort: 8000 }]
+          env:
+            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: app-secrets, key: database-url } } }
+            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: app-secrets, key: jwt-secret } } }
+            - { name: METADATA_URL, value: "http://metadata:8000" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: distributed-mid
+spec:
+  type: LoadBalancer
+  selector: { app: gateway }
+  ports: [{ port: 80, targetPort: 8000 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: distributed-mid
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }

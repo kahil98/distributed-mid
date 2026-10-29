@@ -1,0 +1,18 @@
+{
+  "timestamp_utc": "2026-10-28T22:34:19.024545+00:00",
+  "checks": [
+    "JWT is required on user API routes",
+    "JWT login and API interface",
+    "Create and list bucket",
+    "Streaming upload records correct object size",
+    "Metadata returns user tags",
+    "Elasticsearch prefix, size, and tag metadata search",
+    "Byte-range download returns correct 206 slice",
+    "Full download returns original payload",
+    "Cluster health reports node state, chunk distribution, and repair progress",
+    "Object deletion returns 204",
+    "Delete removes the metadata document from Elasticsearch search"
+  ],
+  "bucket": "exam-gw-ed62dfdee0ca",
+  "object_key": "evidence/hello.txt"
+}

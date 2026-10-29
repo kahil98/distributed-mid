@@ -1,0 +1,16 @@
+{
+  "title": "Distributed Storage Overview",
+  "uid": "distributed-storage",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {"id": 1, "title": "Gateway requests / sec", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "sum(rate(gateway_requests_total[5m]))", "legendFormat": "requests/s"}]},
+    {"id": 2, "title": "Gateway average latency", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "rate(gateway_request_duration_seconds_sum[5m]) / clamp_min(rate(gateway_request_duration_seconds_count[5m]), 0.001)", "legendFormat": "seconds"}]},
+    {"id": 3, "title": "Free disk by node", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "targets": [{"expr": "storage_node_free_bytes", "legendFormat": "{{node_id}}"}]},
+    {"id": 4, "title": "Chunks by node", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "targets": [{"expr": "storage_node_chunks", "legendFormat": "{{node_id}}"}]},
+    {"id": 5, "title": "Degraded objects", "type": "stat", "gridPos": {"h": 5, "w": 8, "x": 0, "y": 16}, "targets": [{"expr": "storage_degraded_objects"}]},
+    {"id": 6, "title": "Repairs / sec", "type": "timeseries", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16}, "targets": [{"expr": "rate(storage_repairs_total[5m])", "legendFormat": "repairs/s"}]},
+    {"id": 7, "title": "Repair traffic / sec", "type": "timeseries", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16}, "targets": [{"expr": "rate(storage_repair_bytes_total[5m])", "legendFormat": "bytes/s"}]}
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "nodes": [
+    {
+      "status": "ok",
+      "node_id": "node-1",
+      "address": "http://node-1:8000",
+      "free_space": 1015487967232,
+      "chunk_count": 0
+    },
+    {
+      "status": "ok",
+      "node_id": "node-2",
+      "address": "http://node-2:8000",
+      "free_space": 1015487967232,
+      "chunk_count": 0
+    },
+    {
+      "status": "ok",
+      "node_id": "node-3",
+      "address": "http://node-3:8000",
+      "free_space": 1015487959040,
+      "chunk_count": 0
+    },
+    {
+      "status": "ok",
+      "node_id": "node-4",
+      "address": "http://node-4:8000",
+      "free_space": 1015487942656,
+      "chunk_count": 0
+    }
+  ],
+  "registry": [
+    {
+      "node_id": "node-4",
+      "address": "http://node-4:8000",
+      "free_space": 1015488454656,
+      "chunk_count": 0,
+      "last_seen": "2026-10-28T20:21:26.759069+00:00",
+      "alive": true
+    },
+    {
+      "node_id": "node-3",
+      "address": "http://node-3:8000",
+      "free_space": 1015488364544,
+      "chunk_count": 0,
+      "last_seen": "2026-10-28T20:21:27.068972+00:00",
+      "alive": true
+    },
+    {
+      "node_id": "node-2",
+      "address": "http://node-2:8000",
+      "free_space": 1015488315392,
+      "chunk_count": 0,
+      "last_seen": "2026-10-28T20:21:27.416057+00:00",
+      "alive": true
+    },
+    {
+      "node_id": "node-1",
+      "address": "http://node-1:8000",
+      "free_space": 1015488028672,
+      "chunk_count": 0,
+      "last_seen": "2026-10-28T20:21:28.377925+00:00",
+      "alive": true
+    }
+  ]
+}

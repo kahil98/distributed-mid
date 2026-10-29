@@ -1,0 +1,22 @@
+{
+  "passed": 17,
+  "checks": [
+    "Metadata API and PostgreSQL are healthy",
+    "PostgreSQL stores heartbeats from four storage nodes",
+    "Object manifests include ordered SHA-256 chunk metadata",
+    "Repeated content shares one stored chunk with two references",
+    "Object metadata persists bucket, key, size, version, chunks, and creation date",
+    "Deleting one object preserves its still-referenced chunk",
+    "Chunk is deleted from disk when its last object reference is removed",
+    "Overwriting an object increments its stored version",
+    "Download returns the newest object version",
+    "Replacing an object releases its prior chunk reference",
+    "Fixed and rolling-hash CDC split the same input using different boundaries",
+    "CDC chunks reassemble to the original object",
+    "Every manifest chunk has a SHA-256 address",
+    "Ring add moves only expected chunks: 21.602%",
+    "{\"after_nodes\": [\"node-1\", \"node-2\", \"node-3\", \"node-4\", \"node-simulated-5\"], \"before_nodes\": [\"node-1\", \"node-2\", \"node-3\", \"node-4\"], \"chunks\": 50000, \"expected_approx_percent\": 20.0, \"moved_chunks\": 10801, \"moved_percent\": 21.602, \"virtual_nodes\": 128}",
+    "Ring remove moves only expected chunks: 25.91%",
+    "{\"after_nodes\": [\"node-2\", \"node-3\", \"node-4\"], \"before_nodes\": [\"node-1\", \"node-2\", \"node-3\", \"node-4\"], \"chunks\": 50000, \"expected_approx_percent\": 25.0, \"moved_chunks\": 12955, \"moved_percent\": 25.91, \"virtual_nodes\": 128}"
+  ]
+}

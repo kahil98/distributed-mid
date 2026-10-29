@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-nodes
+  labels: { app: storage-node }
+spec:
+  clusterIP: None
+  selector: { app: storage-node }
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: storage-node
+spec:
+  serviceName: storage-nodes
+  replicas: 4
+  selector:
+    matchLabels: { app: storage-node }
+  template:
+    metadata:
+      labels: { app: storage-node }
+    spec:
+      containers:
+        - name: storage-node
+          image: distributed-mid-storage-task:local
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "storage_node.app:app", "--host", "0.0.0.0", "--port", "8000"]
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: DATA_DIR
+              value: /data
+            - name: METADATA_URL
+              value: http://metadata:8000
+            - name: ADVERTISED_URL
+              value: http://$(NODE_ID).storage-nodes:8000
+            - name: HEARTBEAT_INTERVAL
+              value: "3"
+          ports:
+            - { name: http, containerPort: 8000 }
+          volumeMounts:
+            - { name: chunks, mountPath: /data }
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata: { name: chunks }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 10Gi }

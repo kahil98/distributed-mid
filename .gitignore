@@ -4,3 +4,7 @@ __pycache__/
 .env
 .idea/
 .vscode/
+.pytest_cache/
+data/
+
+build-wheels/

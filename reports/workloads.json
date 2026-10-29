@@ -1,0 +1,39 @@
+{
+  "timestamp_utc": "2026-10-29T10:00:17.401952+00:00",
+  "scope": "Storage-node chunk API; client-side fixed-size splitting and reassembly; no replication, erasure coding, or S3 API",
+  "chunk_size_bytes": 4194304,
+  "small_files": {
+    "files": 5000,
+    "bytes": 131867328,
+    "chunks": 5000,
+    "workers": 8,
+    "elapsed_seconds": 34.199,
+    "roundtrip_mib_per_second_including_generation_and_cleanup": 7.355,
+    "all_file_and_chunk_hashes_verified": true,
+    "put_latency_ms": {
+      "median": 27.688,
+      "p95": 54.125
+    },
+    "get_latency_ms": {
+      "median": 9.948,
+      "p95": 19.66
+    }
+  },
+  "large_files": {
+    "files": 10,
+    "bytes": 1048576000,
+    "chunks": 250,
+    "workers": 4,
+    "elapsed_seconds": 36.715,
+    "roundtrip_mib_per_second_including_generation_and_cleanup": 54.473,
+    "all_file_and_chunk_hashes_verified": true,
+    "put_latency_ms": {
+      "median": 318.571,
+      "p95": 497.421
+    },
+    "get_latency_ms": {
+      "median": 150.082,
+      "p95": 228.639
+    }
+  }
+}
