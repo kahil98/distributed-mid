@@ -4,7 +4,7 @@
 
 Dedicated images are configured for the storage node, metadata service, gateway, RabbitMQ repair worker, and React UI. Docker Compose is the local deployment. The Kubernetes manifest defines the application workloads, four PVC-backed storage pods, RabbitMQ, Elasticsearch, two gateways behind a CPU HPA, a `LoadBalancer` UI service, and a metadata deployment connected to managed PostgreSQL.
 
-The source checks pass, but this is **not yet a verified live deployment**. A previous image build failed inside Docker Desktop with `exec /bin/sh: exec format error`; Docker then became unresponsive. C: reports 0 free bytes. The updated Dockerfiles have not been built. No AWS/GCP/Azure CLI credentials, cloud project/account, region, image registry, or cluster were available, so cloud provisioning, HPA scale-out, and live chunk movement remain unverified.
+The source checks pass, but this is **not yet a verified live deployment**. A previous image build failed inside Docker Desktop with `exec /bin/sh: exec format error`; Docker then became unresponsive. C: reached 0 free bytes during verification and had about 198 MB free at the last check. The updated Dockerfiles have not been built. No AWS/GCP/Azure CLI credentials, cloud project/account, region, image registry, or cluster were available, so cloud provisioning, HPA scale-out, and live chunk movement remain unverified.
 
 ## Files
 
