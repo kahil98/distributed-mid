@@ -1,7 +1,9 @@
 name: distributed-mid-storage-task
 x-node: &node
-  image: distributed-mid-storage-task:local
-  build: .
+  image: distributed-mid-storage-node:local
+  build:
+    context: .
+    dockerfile: storage_node/Dockerfile
   restart: unless-stopped
   environment: &node-env
     METADATA_URL: http://metadata:8000
@@ -21,14 +23,18 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_GATEWAY_URL: ""
     ports: ["127.0.0.1:5173:80"]
     depends_on:
       nginx:
         condition: service_started
     restart: unless-stopped
   gateway:
-    image: distributed-mid-storage-task:local
-    build: .
+    image: distributed-mid-gateway:local
+    build:
+      context: .
+      dockerfile: gateway_service/Dockerfile
     command: ["uvicorn", "gateway_service.app:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
     deploy:
@@ -77,8 +83,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
   job-worker:
-    image: distributed-mid-storage-task:local
-    build: .
+    image: distributed-mid-repair-worker:local
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.worker
     command: ["python", "scripts/job_worker.py"]
     environment:
       DATABASE_URL: postgresql://distributed:distributed@postgres:5432/distributed
@@ -90,8 +98,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
   metadata:
-    image: distributed-mid-storage-task:local
-    build: .
+    image: distributed-mid-metadata:local
+    build:
+      context: .
+      dockerfile: metadata_service/Dockerfile
     command: ["uvicorn", "metadata_service.app:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
     ports: ["127.0.0.1:8100:8000"]

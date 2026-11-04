@@ -1,8 +1,60 @@
-# Task 8: container and cloud deployment
+# Task 8: Docker and Kubernetes deployment
 
-## Service images
+## Scope and status
 
-Dedicated Dockerfiles are provided for the storage node, metadata API, gateway API, RabbitMQ job worker, and React UI. Build/push images to a registry you control, then replace `YOUR_REGISTRY` and `VERSION` in `deploy/kubernetes/task8-cloud.yaml`.
+Dedicated images are configured for the storage node, metadata service, gateway, RabbitMQ repair worker, and React UI. Docker Compose is the local deployment. The Kubernetes manifest defines the application workloads, four PVC-backed storage pods, RabbitMQ, Elasticsearch, two gateways behind a CPU HPA, a `LoadBalancer` UI service, and a metadata deployment connected to managed PostgreSQL.
+
+The source checks pass, but this is **not yet a verified live deployment**. A previous image build failed inside Docker Desktop with `exec /bin/sh: exec format error`; Docker then became unresponsive. C: reports 0 free bytes. The updated Dockerfiles have not been built. No AWS/GCP/Azure CLI credentials, cloud project/account, region, image registry, or cluster were available, so cloud provisioning, HPA scale-out, and live chunk movement remain unverified.
+
+## Files
+
+- `storage_node/Dockerfile`, `metadata_service/Dockerfile`, `gateway_service/Dockerfile`, `scripts/Dockerfile.worker`, and `frontend/Dockerfile` build the five services.
+- `compose.storage.yaml` wires the dedicated images, Postgres, Elasticsearch, Nginx, gateway replicas, worker replicas, and storage nodes; node 8 is in the `scale-test` profile.
+- `frontend/nginx.conf` serves the React app and proxies API/docs routes to the gateway. The cloud/Compose production bundle uses a relative API URL.
+- `infra/nginx.conf` load-balances the Compose gateway replicas.
+- `deploy/kubernetes/task8-cloud.yaml` provides Kubernetes resources and a gateway HPA with a 2–10 replica range at 65% CPU utilization.
+- `tests/test_task8_deployment.py` verifies that a new node heartbeat queues one rebalance job and repeat heartbeats do not queue duplicates.
+
+## Local setup and checks
+
+Start Docker Desktop with Linux containers. On a fresh checkout, copy `.env.example` to `.env` and set local credentials. Start the shared infrastructure (RabbitMQ, Prometheus, Grafana, Kafka):
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env and set the local passwords.
+docker compose up -d
+docker compose ps
+```
+
+Start the application dependencies and services, with two gateways and two workers:
+
+```powershell
+docker compose -f compose.storage.yaml up -d --build --scale gateway=2 --scale job-worker=2
+docker compose -f compose.storage.yaml ps
+Invoke-RestMethod http://127.0.0.1:8080/health
+Invoke-WebRequest http://127.0.0.1:5173
+Invoke-RestMethod http://127.0.0.1:8100/nodes
+```
+
+Open the UI at `http://127.0.0.1:5173`, gateway docs at `http://127.0.0.1:8080/docs`, RabbitMQ management at `http://127.0.0.1:15672`, and Grafana at `http://127.0.0.1:3000`. Postgres and Elasticsearch are started by `compose.storage.yaml`; the shared Compose file starts RabbitMQ.
+
+Upload a few objects in the UI, then capture node counts and worker logs before/after adding a node:
+
+```powershell
+$before = Invoke-RestMethod http://127.0.0.1:8100/nodes
+$before | ConvertTo-Json -Depth 5
+docker compose -f compose.storage.yaml --profile scale-test up -d node-8
+Start-Sleep -Seconds 8
+$after = Invoke-RestMethod http://127.0.0.1:8100/nodes
+$after | ConvertTo-Json -Depth 5
+docker compose -f compose.storage.yaml logs --tail 80 job-worker
+```
+
+The new node's first heartbeat queues a rebalance message. A worker calls the metadata rebalance handler; it checks fragment placements against the current consistent-hash ring and repairs misplaced fragments. Observe the `rebalancing_jobs` queue in RabbitMQ management and the per-node fragment counts in the UI Cluster view. Only stored chunks whose target changes should move. Keep the before/after output, queue state, and worker logs as exam evidence.
+
+## Build images and prepare cloud deployment
+
+Replace `YOUR_REGISTRY` and `VERSION` with your registry and image tag, then authenticate to that registry and run from the repository root:
 
 ```powershell
 docker build -f storage_node/Dockerfile -t YOUR_REGISTRY/distributed-storage:VERSION .
@@ -12,44 +64,47 @@ docker build -f scripts/Dockerfile.worker -t YOUR_REGISTRY/distributed-worker:VE
 docker build -f frontend/Dockerfile -t YOUR_REGISTRY/distributed-ui:VERSION frontend
 ```
 
-Push each image with `docker push`. Create the `app-secrets` Kubernetes Secret for `database-url` and `jwt-secret`; use a managed PostgreSQL endpoint and configure metadata/RabbitMQ services and secrets for the selected cloud.
-
-## Local Compose verification
-
-Start the dependencies, then the app stack:
+Push these five images, then replace all image placeholders in `deploy/kubernetes/task8-cloud.yaml`. Provide managed PostgreSQL and create the secret in the target cluster; do not commit real credentials:
 
 ```powershell
-docker compose up -d
-docker compose -f compose.storage.yaml up -d --build --scale gateway=2 --scale job-worker=2
-docker compose -f compose.storage.yaml ps
-Invoke-RestMethod http://127.0.0.1:8080/health
-Invoke-WebRequest http://127.0.0.1:5173
+kubectl create namespace distributed-mid
+kubectl -n distributed-mid create secret generic app-secrets `
+  --from-literal=database-url='postgresql://USER:PASSWORD@HOST:5432/DB?sslmode=require' `
+  --from-literal=jwt-secret='REPLACE_WITH_A_LONG_RANDOM_SECRET' `
+  --from-literal=gateway-password='REPLACE_WITH_A_STRONG_PASSWORD' `
+  --from-literal=rabbitmq-user='distmid' `
+  --from-literal=rabbitmq-password='REPLACE_WITH_A_STRONG_PASSWORD'
 ```
 
-Expected: two gateway containers, two workers, gateway health `ok`, and UI HTTP status 200. The metadata heartbeat handler queues a `rebalance` job when a storage node first registers or returns from a failed state. Verify this by adding a node, checking RabbitMQ's `rebalancing_jobs` queue at `http://127.0.0.1:15672`, then reviewing worker logs and metadata placements:
+The UI/API login name defaults to `exam-user`; its password is the `gateway-password` secret. Configure a cloud StorageClass supporting `ReadWriteOnce`, registry pull credentials if needed, and the Kubernetes Metrics Server for HPA. Then configure AWS/GCP/Azure CLI authentication and the cluster context:
 
 ```powershell
-docker compose -f compose.storage.yaml --profile scale-test up -d node-8
-docker compose -f compose.storage.yaml logs --tail 50 job-worker
-Invoke-RestMethod http://127.0.0.1:8100/nodes
-```
-
-For a before/after placement movement percentage, use `POST /placement/measure` with a set of chunk hashes and the before/after node membership. The rebalance worker relocates misplaced fragments based on the current consistent-hash ring.
-
-## Kubernetes on AWS, GCP, or Azure
-
-`deploy/kubernetes/task8-cloud.yaml` is provider-neutral Kubernetes configuration: a four-node storage StatefulSet with PVCs, gateway Deployment (2 replicas), cloud `LoadBalancer` Service, and CPU HPA (2–10 replicas at 65%). Kubernetes requires a working cluster, StorageClass, Metrics Server, registry access, image pull credentials if private, and cloud credentials configured through the provider CLI. Those prerequisites are provider-owned; this repository does not create billable cloud resources.
-
-After configuring `kubectl`, registry image names, secrets, and the metadata/RabbitMQ endpoints:
-
-```powershell
+kubectl config current-context
 kubectl apply -f deploy/kubernetes/task8-cloud.yaml
-kubectl -n distributed-mid get pods,pvc,svc,hpa
+kubectl -n distributed-mid rollout status deployment/metadata
+kubectl -n distributed-mid rollout status deployment/gateway
+kubectl -n distributed-mid get pods,pvc,svc,hpa -o wide
 kubectl -n distributed-mid describe hpa gateway
 ```
 
-Cloud live deployment and HPA scale-out require an actual provider cluster and load; they cannot be verified from local config alone.
+Use the external address on service `ui`. To demonstrate HPA scale-out, generate sustained authenticated API load and check HPA targets and gateway replica count. To add a cloud storage node, scale the StatefulSet and observe the queue and node distribution:
 
-## Validation and limits
+```powershell
+kubectl -n distributed-mid scale statefulset/storage-node --replicas=5
+kubectl -n distributed-mid get pods -w
+kubectl -n distributed-mid logs deployment/repair-worker --all-pods=true --tail=100 -f
+```
 
-Verified: all 54 tests pass and `docker compose -f compose.storage.yaml config --quiet` passes. The Docker build was attempted but the local Docker engine failed at the base-image RUN step with `exec format error`, so images and the live Compose stack are not verified. Cloud resources were not provisioned. The cloud manifest is a template: it expects managed PostgreSQL and in-cluster metadata/RabbitMQ endpoints, but does not create or configure those dependencies. The single-node PostgreSQL in local Compose is not HA. Test cloud HPA and storage-node rebalance on a configured cluster before presenting it as a completed live cloud deployment.
+## Verification results
+
+- `python -m pytest -q -p no:cacheprovider`: **55 passed**, one third-party Starlette/AnyIO deprecation warning.
+- `npm run build` with `VITE_GATEWAY_URL` empty: **passed**; verified no `http://127.0.0.1:8080` was embedded in the generated bundle.
+- `docker compose -f compose.storage.yaml config --quiet`: **passed**.
+- `kubectl create --dry-run=client --validate=false -f deploy/kubernetes/task8-cloud.yaml -o name`: **passed**, 15 resources parsed.
+- Automated heartbeat test: **passed**; a first-time node registration queues one rebalance job, and subsequent heartbeats do not enqueue duplicates. Consistent-hash movement tests also pass.
+- Updated Docker image build and live Compose/rebalance: **not verified** due to the Docker failure and full disk noted above.
+- Cloud deployment, HPA scale-out, and live node-rebalance measurement: **not run**; no provider/authenticated cluster is available yet.
+
+## Limitations
+
+The Kubernetes manifest expects externally managed PostgreSQL; the metadata replicas depend on that database. RabbitMQ and Elasticsearch are single-replica demo services, and Elasticsearch has no PVC. The HPA needs Metrics Server and available cluster capacity. Use managed/HA dependencies, TLS, cloud secret management, persistent Elasticsearch storage, and provider-specific policies before treating this as a production deployment.

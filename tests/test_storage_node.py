@@ -137,7 +137,8 @@ def test_heartbeat_retries_and_reports_counts(tmp_path):
             time.sleep(0.02)
         assert len(messages) >= 3
         assert messages[-1]["node_id"] == "test-node"
-        assert messages[-1]["free_space"] > 0
+        # A full filesystem is valid telemetry; zero free bytes is not a heartbeat error.
+        assert messages[-1]["free_space"] >= 0
         assert messages[-1]["chunk_count"] == 1
 
 

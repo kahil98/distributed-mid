@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
-const API = import.meta.env.VITE_GATEWAY_URL || 'http://127.0.0.1:8080'
+const API = import.meta.env.VITE_GATEWAY_URL ?? ''
 const prettyBytes = (value = 0) => {
   if (value < 1024) return `${value} B`
   const units = ['KB', 'MB', 'GB', 'TB']; let size = value / 1024; let index = 0
@@ -150,7 +150,7 @@ function App() {
 
   const healthyNodes = cluster.nodes.filter((node) => node.health === 'healthy').length
   return <div className="app-shell">
-    <aside className="sidebar"><Brand /><div className="side-label">WORKSPACE</div><nav>{['Overview', 'Objects', 'Cluster'].map((item, index) => <button key={item} className={`nav-link ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}><span className="nav-icon">{['◫', '▤', '⌘'][index]}</span>{item}{item === 'Cluster' && cluster.degraded_count > 0 && <b className="nav-count">{cluster.degraded_count}</b>}</button>)}</nav><div className="sidebar-bottom"><span className="green-dot" /> Storage gateway online <a href="http://127.0.0.1:8080/docs" target="_blank" rel="noreferrer">API docs ↗</a></div></aside>
+    <aside className="sidebar"><Brand /><div className="side-label">WORKSPACE</div><nav>{['Overview', 'Objects', 'Cluster'].map((item, index) => <button key={item} className={`nav-link ${tab === item ? 'active' : ''}`} onClick={() => setTab(item)}><span className="nav-icon">{['◫', '▤', '⌘'][index]}</span>{item}{item === 'Cluster' && cluster.degraded_count > 0 && <b className="nav-count">{cluster.degraded_count}</b>}</button>)}</nav><div className="sidebar-bottom"><span className="green-dot" /> Storage gateway online <a href={`${API}/docs`} target="_blank" rel="noreferrer">API docs ↗</a></div></aside>
     <main className="main-area"><header className="topbar"><div className="breadcrumb">Storage <span>/</span> {tab}</div><div className="top-actions"><div className="live-pill"><i /> Live cluster</div><button className="avatar" title="Sign out" onClick={() => { sessionStorage.removeItem('gateway-token'); setToken(''); setBuckets([]); setObjects([]) }}>{username.slice(0, 1).toUpperCase()}</button></div></header>
       <div className="content-wrap"><div className="page-heading"><div><span className="eyebrow">DISTRIBUTED STORAGE</span><h1>{tab === 'Objects' ? 'Object browser' : tab === 'Cluster' ? 'Cluster health' : 'Overview'}</h1><p>Manage your objects and monitor the storage fabric.</p></div><div className="heading-status"><span className="green-dot" />{healthyNodes} / {cluster.node_count || 0} nodes healthy</div></div>
       {error && <div className="feedback error">{error}<button onClick={() => setError('')}>Dismiss</button></div>}{notice && <div className="feedback success">{notice}<button onClick={() => setNotice('')}>Dismiss</button></div>}

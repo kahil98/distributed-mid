@@ -1,113 +1,230 @@
 apiVersion: v1
 kind: Namespace
-metadata:
-  name: distributed-mid
+metadata: {name: distributed-mid}
 ---
+# Supply this secret before deploying. DATABASE_URL should use managed PostgreSQL.
 apiVersion: apps/v1
 kind: StatefulSet
-metadata:
-  name: storage-node
-  namespace: distributed-mid
+metadata: {name: rabbitmq, namespace: distributed-mid}
 spec:
-  serviceName: storage-nodes
-  replicas: 4
-  selector:
-    matchLabels: { app: storage-node }
+  serviceName: rabbitmq
+  replicas: 1
+  selector: {matchLabels: {app: rabbitmq}}
   template:
-    metadata:
-      labels: { app: storage-node }
+    metadata: {labels: {app: rabbitmq}}
     spec:
-      securityContext: { fsGroup: 10001 }
       containers:
-        - name: storage-node
-          image: YOUR_REGISTRY/distributed-storage:VERSION
-          ports: [{ containerPort: 8000 }]
+        - name: rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          ports: [{name: amqp, containerPort: 5672}, {name: management, containerPort: 15672}]
           env:
-            - { name: NODE_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
-            - { name: DATA_DIR, value: /data }
-            - { name: METADATA_URL, value: "http://metadata:8000" }
-            - { name: ADVERTISED_URL, value: "http://$(NODE_ID).storage-nodes:8000" }
-          volumeMounts: [{ name: chunks, mountPath: /data }]
-          readinessProbe:
-            httpGet: { path: /health, port: 8000 }
-            periodSeconds: 5
-          livenessProbe:
-            httpGet: { path: /health, port: 8000 }
-            periodSeconds: 10
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-user}}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-password}}
+          volumeMounts: [{name: data, mountPath: /var/lib/rabbitmq}]
+          readinessProbe: {exec: {command: [rabbitmq-diagnostics, -q, ping]}, periodSeconds: 10}
+          livenessProbe: {exec: {command: [rabbitmq-diagnostics, -q, ping]}, initialDelaySeconds: 30, periodSeconds: 20}
   volumeClaimTemplates:
-    - metadata: { name: chunks }
+    - metadata: {name: data}
       spec:
         accessModes: [ReadWriteOnce]
-        resources:
-          requests: { storage: 20Gi }
+        resources: {requests: {storage: 5Gi}}
 ---
 apiVersion: v1
 kind: Service
-metadata:
-  name: storage-nodes
-  namespace: distributed-mid
+metadata: {name: rabbitmq, namespace: distributed-mid}
 spec:
-  clusterIP: None
-  selector: { app: storage-node }
-  ports: [{ port: 8000, targetPort: 8000 }]
+  selector: {app: rabbitmq}
+  ports: [{name: amqp, port: 5672}, {name: management, port: 15672}]
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: gateway
-  namespace: distributed-mid
+metadata: {name: elasticsearch, namespace: distributed-mid}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: elasticsearch}}
+  template:
+    metadata: {labels: {app: elasticsearch}}
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.17.5
+          ports: [{name: http, containerPort: 9200}]
+          env:
+            - {name: discovery.type, value: single-node}
+            - {name: xpack.security.enabled, value: "false"}
+            - {name: ES_JAVA_OPTS, value: "-Xms512m -Xmx512m"}
+            - {name: node.store.allow_mmap, value: "false"}
+          resources:
+            requests: {cpu: 250m, memory: 1Gi}
+            limits: {memory: 2Gi}
+          readinessProbe: {httpGet: {path: /_cluster/health, port: http}, initialDelaySeconds: 30}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: elasticsearch, namespace: distributed-mid}
+spec:
+  selector: {app: elasticsearch}
+  ports: [{port: 9200, targetPort: 9200}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: metadata, namespace: distributed-mid}
 spec:
   replicas: 2
-  selector:
-    matchLabels: { app: gateway }
+  selector: {matchLabels: {app: metadata}}
   template:
-    metadata:
-      labels: { app: gateway }
+    metadata: {labels: {app: metadata}}
+    spec:
+      containers:
+        - name: metadata
+          image: YOUR_REGISTRY/distributed-metadata:VERSION
+          ports: [{name: http, containerPort: 8000}]
+          env:
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: app-secrets, key: database-url}}
+            - {name: RABBITMQ_MANAGEMENT_URL, value: "http://rabbitmq:15672"}
+            - name: RABBITMQ_USER
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-user}}
+            - name: RABBITMQ_PASSWORD
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-password}}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: metadata, namespace: distributed-mid}
+spec:
+  selector: {app: metadata}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: storage-node, namespace: distributed-mid}
+spec:
+  serviceName: storage-nodes
+  replicas: 4
+  selector: {matchLabels: {app: storage-node}}
+  template:
+    metadata: {labels: {app: storage-node}}
+    spec:
+      securityContext: {fsGroup: 10001}
+      containers:
+        - name: storage-node
+          image: YOUR_REGISTRY/distributed-storage:VERSION
+          ports: [{name: http, containerPort: 8000}]
+          env:
+            - name: NODE_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: DATA_DIR, value: /data}
+            - {name: METADATA_URL, value: "http://metadata:8000"}
+            - {name: ADVERTISED_URL, value: "http://$(NODE_ID).storage-nodes:8000"}
+            - {name: HEARTBEAT_INTERVAL, value: "3"}
+          volumeMounts: [{name: chunks, mountPath: /data}]
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 10, periodSeconds: 10}
+  volumeClaimTemplates:
+    - metadata: {name: chunks}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 20Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: storage-nodes, namespace: distributed-mid}
+spec:
+  clusterIP: None
+  selector: {app: storage-node}
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gateway, namespace: distributed-mid}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: gateway}}
+  template:
+    metadata: {labels: {app: gateway}}
     spec:
       containers:
         - name: gateway
           image: YOUR_REGISTRY/distributed-gateway:VERSION
-          ports: [{ containerPort: 8000 }]
+          ports: [{name: http, containerPort: 8000}]
           env:
-            - { name: DATABASE_URL, valueFrom: { secretKeyRef: { name: app-secrets, key: database-url } } }
-            - { name: JWT_SECRET, valueFrom: { secretKeyRef: { name: app-secrets, key: jwt-secret } } }
-            - { name: METADATA_URL, value: "http://metadata:8000" }
-          readinessProbe:
-            httpGet: { path: /health, port: 8000 }
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          livenessProbe:
-            httpGet: { path: /health, port: 8000 }
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: app-secrets, key: database-url}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: app-secrets, key: jwt-secret}}
+            - name: GATEWAY_PASSWORD
+              valueFrom: {secretKeyRef: {name: app-secrets, key: gateway-password}}
+            - {name: METADATA_URL, value: "http://metadata:8000"}
+            - {name: ELASTICSEARCH_URL, value: "http://elasticsearch:9200"}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 15, periodSeconds: 10}
           resources:
-            requests: { cpu: 250m, memory: 256Mi }
-            limits: { cpu: "1", memory: 1Gi }
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
 ---
 apiVersion: v1
 kind: Service
-metadata:
-  name: gateway
-  namespace: distributed-mid
+metadata: {name: gateway, namespace: distributed-mid}
+spec:
+  selector: {app: gateway}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: repair-worker, namespace: distributed-mid}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: repair-worker}}
+  template:
+    metadata: {labels: {app: repair-worker}}
+    spec:
+      containers:
+        - name: worker
+          image: YOUR_REGISTRY/distributed-worker:VERSION
+          env:
+            - {name: METADATA_URL, value: "http://metadata:8000"}
+            - {name: RABBITMQ_MANAGEMENT_URL, value: "http://rabbitmq:15672"}
+            - name: RABBITMQ_USER
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-user}}
+            - name: RABBITMQ_PASSWORD
+              valueFrom: {secretKeyRef: {name: app-secrets, key: rabbitmq-password}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ui, namespace: distributed-mid}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: ui}}
+  template:
+    metadata: {labels: {app: ui}}
+    spec:
+      containers:
+        - name: ui
+          image: YOUR_REGISTRY/distributed-ui:VERSION
+          ports: [{name: http, containerPort: 80}]
+          readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ui, namespace: distributed-mid}
 spec:
   type: LoadBalancer
-  selector: { app: gateway }
-  ports: [{ port: 80, targetPort: 8000 }]
+  selector: {app: ui}
+  ports: [{port: 80, targetPort: 80}]
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
-metadata:
-  name: gateway
-  namespace: distributed-mid
+metadata: {name: gateway, namespace: distributed-mid}
 spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: gateway
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: gateway}
   minReplicas: 2
   maxReplicas: 10
   metrics:
     - type: Resource
       resource:
         name: cpu
-        target: { type: Utilization, averageUtilization: 65 }
+        target: {type: Utilization, averageUtilization: 65}
