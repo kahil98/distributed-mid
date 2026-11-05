@@ -115,6 +115,28 @@ az group delete --name rg-distributed-mid-demo --yes --no-wait
 
 This cleanup is deliberately manual because it permanently deletes the deployment and its stored object data. The deployment script has not been run yet; it is waiting for the active student subscription.
 
+## GitHub Codespaces demo
+
+`.devcontainer/devcontainer.json` defines a Python 3.12 environment with Docker in Docker
+and forwards the UI, API, monitoring, and RabbitMQ management ports. No cloud keys are
+stored in the repository. The startup script creates an ignored `.env` with random demo
+secrets, starts the shared RabbitMQ/monitoring Compose services, and builds/starts the
+application services:
+
+```bash
+bash scripts/codespaces-up.sh
+```
+
+Open forwarded port 5173 for the React UI or port 8080 plus `/docs` for Swagger. Codespaces
+ports are private by default. This is not a persistent Kubernetes cluster; volumes belong
+to the Codespace. GitHub Free personal accounts currently include 120 core-hours and
+15 GB-month of Codespaces usage. Stop the Codespace when finished and check billing before
+creating it; paid usage can apply if limits are exceeded and billing is enabled.
+
+The script generates random credentials in `.env` and never prints them. In the Codespace
+terminal, run `grep -E '^(GATEWAY_PASSWORD|GRAFANA_PASSWORD|RABBITMQ_PASSWORD)=' .env` to
+read the demo login values. Gateway username is `exam-user`; Grafana username is `admin`.
+
 Use the external address on service `ui`. To demonstrate HPA scale-out, generate sustained authenticated API load and check HPA targets and gateway replica count. To add a cloud storage node, scale the StatefulSet and observe the queue and node distribution:
 
 ```powershell

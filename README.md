@@ -67,6 +67,18 @@ Desktop if needed, then verify it:
 kubectl --context docker-desktop get nodes
 ```
 
+## GitHub Codespaces demo
+
+Open **Code → Codespaces → Create codespace on main** on GitHub, then run:
+
+```bash
+bash scripts/codespaces-up.sh
+```
+
+Open the forwarded UI port 5173; gateway Swagger docs are on port 8080 at `/docs`.
+The Codespace is a temporary Compose demo, not a persistent Kubernetes deployment.
+See [Codespaces setup and limitations](docs/task-8/README.md#github-codespaces-demo).
+
 The four services run through Compose; Kubernetes is available separately for
 application deployments.
 
