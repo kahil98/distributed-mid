@@ -2,9 +2,9 @@
 
 ## Scope and status
 
-Dedicated images are configured for the storage node, metadata service, gateway, RabbitMQ repair worker, and React UI. Docker Compose is the local deployment. The Kubernetes manifest defines the application workloads, four PVC-backed storage pods, RabbitMQ, Elasticsearch, two gateways behind a CPU HPA, a `LoadBalancer` UI service, and a metadata deployment connected to managed PostgreSQL.
+Dedicated images are configured for the storage node, metadata service, gateway, RabbitMQ repair worker, and React UI. Docker Compose is the local deployment. The Kubernetes manifest defines the application workloads, four PVC-backed storage pods, PVC-backed demo PostgreSQL and RabbitMQ, Elasticsearch, two gateways behind a CPU HPA, and a `LoadBalancer` UI service.
 
-The source checks pass, but this is **not yet a verified live deployment**. A previous image build failed inside Docker Desktop with `exec /bin/sh: exec format error`; Docker then became unresponsive. C: reached 0 free bytes during verification and had about 198 MB free at the last check. The updated Dockerfiles have not been built. No AWS/GCP/Azure CLI credentials, cloud project/account, region, image registry, or cluster were available, so cloud provisioning, HPA scale-out, and live chunk movement remain unverified.
+The source checks pass, but this is **not yet a verified live deployment**. A previous image build failed inside Docker Desktop with `exec /bin/sh: exec format error`; Docker's API still times out even though the desktop app reports it is running. C: reached 0 free bytes during verification and later recovered to about 13.6 GB free. The updated Dockerfiles have not been built. The Azure Portal is signed in, but it showed no active subscription. Azure for Students activation is pending; cloud provisioning, HPA scale-out, and live chunk movement remain unverified.
 
 ## Files
 
@@ -13,6 +13,7 @@ The source checks pass, but this is **not yet a verified live deployment**. A pr
 - `frontend/nginx.conf` serves the React app and proxies API/docs routes to the gateway. The cloud/Compose production bundle uses a relative API URL.
 - `infra/nginx.conf` load-balances the Compose gateway replicas.
 - `deploy/kubernetes/task8-cloud.yaml` provides Kubernetes resources and a gateway HPA with a 2–10 replica range at 65% CPU utilization.
+- `deploy/azure/deploy-student.sh` builds images remotely in Azure Container Registry Tasks and deploys the manifest from Azure Cloud Shell after subscription activation. The script passed Bash syntax validation; it has not been run against Azure.
 - `tests/test_task8_deployment.py` verifies that a new node heartbeat queues one rebalance job and repeat heartbeats do not queue duplicates.
 
 ## Local setup and checks
@@ -87,6 +88,33 @@ kubectl -n distributed-mid get pods,pvc,svc,hpa -o wide
 kubectl -n distributed-mid describe hpa gateway
 ```
 
+## Azure for Students deployment
+
+Your Azure session is already signed in, but the portal currently has no active subscription. In the Azure Portal, open **Azure for Students** and select **Start**. The account holder must verify academic status and confirm they meet the offer requirements (18+ and full-time at an accredited two- or four-year institution). Microsoft currently lists $100 of credit for 12 months without a credit card; AKS control-plane management is free, while node compute, disks, network, and other resources consume credit. See [Azure for Students offer terms](https://azure.microsoft.com/en-us/pricing/offers/ms-azr-0170p) and [Azure AKS student offer details](https://azure.microsoft.com/en-us/free/students/). Do not upgrade the subscription to pay-as-you-go for this exam deployment.
+
+After the subscription appears as active, open Azure Cloud Shell in **Bash**. Cloud Shell supplies `az` and `kubectl`, so the app images are built in ACR without the local Docker engine. From Cloud Shell, run:
+
+```bash
+git clone https://github.com/kahil98/distributed-mid.git
+cd distributed-mid
+export ACR_NAME="distmid${RANDOM}${RANDOM}"
+export LOCATION="uaenorth"
+export CONFIRM_STUDENT_CREDIT="YES"
+bash deploy/azure/deploy-student.sh
+```
+
+The script creates resource group `rg-distributed-mid-demo`, a Standard ACR, and a one-node AKS cluster using a `Standard_D2as_v5` VM; it builds all five images through ACR Tasks, generates demo credentials into a short-lived local secret file, and applies the Kubernetes manifest. The cluster, registry, disks, public IP, and network use Azure student credit. Resource quotas and credit availability can vary by account and region. The script stops if the active Azure CLI session or explicit credit acknowledgment is missing.
+
+When rollout completes, run `kubectl -n distributed-mid get service ui` until `EXTERNAL-IP` is assigned, then open `http://<EXTERNAL-IP>`. The username is `exam-user`; read the generated password with `kubectl -n distributed-mid get secret app-secrets -o jsonpath='{.data.gateway-password}' | base64 -d; echo`. Demonstrate node addition with `kubectl -n distributed-mid scale statefulset/storage-node --replicas=5`, then inspect `kubectl -n distributed-mid logs deployment/repair-worker --all-pods=true --tail=100` and the cluster page.
+
+After the exam, delete the demo's resource group to stop ongoing credit use and remove the cluster, registry, and all stored data:
+
+```bash
+az group delete --name rg-distributed-mid-demo --yes --no-wait
+```
+
+This cleanup is deliberately manual because it permanently deletes the deployment and its stored object data. The deployment script has not been run yet; it is waiting for the active student subscription.
+
 Use the external address on service `ui`. To demonstrate HPA scale-out, generate sustained authenticated API load and check HPA targets and gateway replica count. To add a cloud storage node, scale the StatefulSet and observe the queue and node distribution:
 
 ```powershell
@@ -100,11 +128,13 @@ kubectl -n distributed-mid logs deployment/repair-worker --all-pods=true --tail=
 - `python -m pytest -q -p no:cacheprovider`: **55 passed**, one third-party Starlette/AnyIO deprecation warning.
 - `npm run build` with `VITE_GATEWAY_URL` empty: **passed**; verified no `http://127.0.0.1:8080` was embedded in the generated bundle.
 - `docker compose -f compose.storage.yaml config --quiet`: **passed**.
-- `kubectl create --dry-run=client --validate=false -f deploy/kubernetes/task8-cloud.yaml -o name`: **passed**, 15 resources parsed.
+- `node` with `js-yaml`: **passed**, all 18 Kubernetes YAML documents parsed.
+- `bash -n deploy/azure/deploy-student.sh`: **passed**.
+- `kubectl` client dry-run on the updated manifest: **not available**; the local Kubernetes API timed out during discovery. YAML syntax was independently parsed, but API schema validation needs a live cluster.
 - Automated heartbeat test: **passed**; a first-time node registration queues one rebalance job, and subsequent heartbeats do not enqueue duplicates. Consistent-hash movement tests also pass.
 - Updated Docker image build and live Compose/rebalance: **not verified** due to the Docker failure and full disk noted above.
 - Cloud deployment, HPA scale-out, and live node-rebalance measurement: **not run**; no provider/authenticated cluster is available yet.
 
 ## Limitations
 
-The Kubernetes manifest expects externally managed PostgreSQL; the metadata replicas depend on that database. RabbitMQ and Elasticsearch are single-replica demo services, and Elasticsearch has no PVC. The HPA needs Metrics Server and available cluster capacity. Use managed/HA dependencies, TLS, cloud secret management, persistent Elasticsearch storage, and provider-specific policies before treating this as a production deployment.
+The demo manifest runs a single PostgreSQL StatefulSet with a PVC; it is not an HA database. RabbitMQ and Elasticsearch are also single-replica demo services, and Elasticsearch has no PVC. The HPA needs Metrics Server and available cluster capacity. Use managed/HA dependencies, TLS, cloud secret management, persistent Elasticsearch storage, and provider-specific policies before treating this as a production deployment.

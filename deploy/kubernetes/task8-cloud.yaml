@@ -2,7 +2,52 @@ apiVersion: v1
 kind: Namespace
 metadata: {name: distributed-mid}
 ---
-# Supply this secret before deploying. DATABASE_URL should use managed PostgreSQL.
+# Supply app-secrets before deploying; this demo manifest runs PostgreSQL on a PVC.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: postgres, namespace: distributed-mid}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports: [{name: postgres, containerPort: 5432}]
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: app-secrets, key: postgres-user}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: app-secrets, key: postgres-password}}
+            - name: POSTGRES_DB
+              valueFrom: {secretKeyRef: {name: app-secrets, key: postgres-db}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          volumeMounts: [{name: postgres-data, mountPath: /var/lib/postgresql/data}]
+          readinessProbe:
+            exec: {command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]}
+            periodSeconds: 5
+          livenessProbe:
+            exec: {command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata: {name: postgres-data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: distributed-mid}
+spec:
+  selector: {app: postgres}
+  ports: [{name: postgres, port: 5432, targetPort: 5432}]
+---
+# Local exam/demo topology; production should use a managed/HA database.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata: {name: rabbitmq, namespace: distributed-mid}
@@ -206,7 +251,36 @@ spec:
         - name: ui
           image: YOUR_REGISTRY/distributed-ui:VERSION
           ports: [{name: http, containerPort: 80}]
+          volumeMounts:
+            - {name: nginx-config, mountPath: /etc/nginx/conf.d/default.conf, subPath: default.conf, readOnly: true}
           readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5}
+      volumes:
+        - name: nginx-config
+          configMap: {name: ui-nginx}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: ui-nginx, namespace: distributed-mid}
+data:
+  default.conf: |
+    server {
+      listen 80;
+      root /usr/share/nginx/html;
+      index index.html;
+      client_max_body_size 0;
+      location /docs { proxy_pass http://gateway:8000/docs; }
+      location /openapi.json { proxy_pass http://gateway:8000/openapi.json; }
+      location ~ ^/(health|auth/|v1/) {
+        proxy_pass http://gateway:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+      }
+      location / { try_files $uri $uri/ /index.html; }
+    }
 ---
 apiVersion: v1
 kind: Service

@@ -1,6 +1,13 @@
 .git
 .venv
 .env
+**/.env*
+!.env.example
+**/node_modules
+**/dist
+.git
+.idea
+.vscode
 **/__pycache__
 .pytest_cache
 data
