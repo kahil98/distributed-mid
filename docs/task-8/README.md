@@ -117,11 +117,11 @@ This cleanup is deliberately manual because it permanently deletes the deploymen
 
 ## GitHub Codespaces demo
 
-`.devcontainer/devcontainer.json` defines a Python 3.12 environment with Docker in Docker
-and forwards the UI, API, monitoring, and RabbitMQ management ports. No cloud keys are
-stored in the repository. The startup script creates an ignored `.env` with random demo
-secrets, starts the shared RabbitMQ/monitoring Compose services, and builds/starts the
-application services:
+`.devcontainer/devcontainer.json` defines a Python 3.12 environment with the Docker-in-Docker
+feature and Docker Compose v2, and forwards the UI, API, monitoring, and RabbitMQ management
+ports. No cloud keys are stored in the repository. The startup script creates an ignored
+`.env` with random demo secrets, starts the shared RabbitMQ/monitoring Compose services,
+and builds/starts the application services:
 
 ```bash
 bash scripts/codespaces-up.sh
